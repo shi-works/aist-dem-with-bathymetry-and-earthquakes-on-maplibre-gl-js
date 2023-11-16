@@ -1,0 +1,538 @@
+<html>
+
+<head>
+    <title>産総研 シームレス標高タイル（統合DEM）+NOAA GEBCO 2023+USGS震源データ</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src='https://unpkg.com/maplibre-gl@3.4.1/dist/maplibre-gl.js'></script>
+    <link href='https://unpkg.com/maplibre-gl@3.4.1/dist/maplibre-gl.css' rel='stylesheet' />
+    <script src="https://unpkg.com/pmtiles@2.10.0/dist/index.js"></script>
+    <style>
+        body {
+            margin: 0;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+
+        .map-overlay {
+            font: bold 12px/20px 'Helvetica Neue', Arial, Helvetica, sans-serif;
+            position: absolute;
+            width: 200px;
+            bottom: 20px;
+            left: 0;
+            padding: 10px;
+        }
+
+        .map-overlay .map-overlay-inner {
+            background-color: #fff;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            border-radius: 3px;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+
+        .map-overlay label {
+            display: block;
+            margin: 0 0 0px;
+            font-size: 12px;
+            top: 100px;
+            left: 10px;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .map-overlay input {
+            background-color: transparent;
+            display: inline-block;
+            width: 100%;
+            position: relative;
+            margin: 0;
+            cursor: ew-resize;
+        }
+
+        .maplibregl-popup .maplibregl-popup-content {
+            padding: 8px 10px;
+            font: 12px/14px Arial, Helvetica, sans-serif;
+            color: black;
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.9);
+            border-radius: 5px;
+            width: 220px;
+            height: 140px;
+            /*overflow: scroll;*/
+        }
+
+        .maplibregl-popup .maplibregl-popup-content .shinouchimei-title {
+            color: red;
+            font-size: larger;
+        }
+
+        .maplibregl-popup .maplibregl-popup-content .quake-info th {
+            width: 80px;
+        }
+
+        /* 1列目 (左側) を右寄せにする */
+        .maplibregl-popup .maplibregl-popup-content .quake-info td:nth-child(1) {
+            text-align: right;
+            width: 80px;
+        }
+
+        /* 2列目 (右側) のセルの幅を広げる */
+        .maplibregl-popup .maplibregl-popup-content .quake-info td:nth-child(2) {
+            text-align: left;
+            width: 130px;
+            /* 必要に応じて適切な値に調整してください */
+            white-space: nowrap;
+            /* 折り返しを防ぐ */
+        }
+
+        .maplibregl-popup .maplibregl-popup-content .quake-info b {
+            text-align: right;
+        }
+
+        .maplibregl-popup .maplibregl-popup-content .quake-info,
+        .maplibregl-popup .maplibregl-popup-content .quake-info th,
+        .maplibregl-popup .maplibregl-popup-content .quake-info td {
+            font: 12px/14px Arial, Helvetica, sans-serif;
+        }
+
+        .legend {
+            background-color: #fff;
+            border-radius: 3px;
+            bottom: 50px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.10);
+            font: 12px/20px 'Helvetica Neue', Arial, Helvetica, sans-serif;
+            padding: 10px;
+            position: absolute;
+            right: 5px;
+            z-index: 1;
+            line-height: 16px;
+            height: 240px;
+        }
+
+        .legend h4 {
+            margin: 0 0 10px;
+        }
+
+        .legend div span {
+            border-radius: 50%;
+            display: inline-block;
+            height: 15px;
+            margin-right: 10px;
+            width: 15px;
+            color: black;
+        }
+
+        .circle-depth {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .circle-container {
+            display: block;
+        }
+
+        .circle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid red;
+            border-radius: 50%;
+            background-color: rgba(255, 0, 0, 0.2);
+        }
+
+        .circle.small {
+            width: 4px;
+            height: 4px;
+        }
+
+        .circle.medium {
+            width: 8px;
+            height: 8px;
+        }
+
+        .circle.large {
+            width: 16px;
+            height: 16px;
+        }
+
+        .circle-text {
+            font-size: 12px;
+            position: relative;
+            color: black;
+        }
+
+        .circle.large .circle-text {
+            font-size: 12px;
+        }
+
+        #filter {
+            padding: 3px 4px;
+            font: 12px/14px Arial, Helvetica, sans-serif;
+            color: black;
+            background: white;
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+            border-radius: 5px;
+            width: 80px;
+            top: 10px;
+            left: 10px;
+            position: absolute;
+            z-index: 1;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+    <div id="filter">
+        <label><b>filter</b></label><br>
+        <select id="filter-selector">
+            <option value="3.0">Mag 3.0+</option>
+            <option value="4.0">Mag 4.0+</option>
+            <option value="5.0">Mag 5.0+</option>
+            <option value="6.0">Mag 6.0+</option>
+            <option value="0.0">ALL</option>
+        </select>
+    </div>
+    <div id='legend' class='legend'>
+        <h4>depth</h4>
+        <div class="circle-depth" style='background-color: #FF0000;display: inline-block;'></div>
+        <span style="display: inline-block; margin-left: 5px;">20km未満</span><br>
+        <div class="circle-depth" style='background-color: #FF7F00;display: inline-block;'></div>
+        <span style="display: inline-block; margin-left: 5px;">40km未満</span><br>
+        <div class="circle-depth" style='background-color: #FFFF00;display: inline-block;'></div>
+        <span style="display: inline-block; margin-left: 5px;">80km未満</span><br>
+        <div class="circle-depth" style='background-color: #00FF00;display: inline-block;'></div>
+        <span style="display: inline-block; margin-left: 5px;">100km未満</span><br>
+        <div class="circle-depth" style='background-color: #00FFFF;display: inline-block;'></div>
+        <span style="display: inline-block; margin-left: 5px;">150km未満</span><br>
+        <div class="circle-depth" style='background-color: #0000FF;display: inline-block;'></div>
+        <span style="display: inline-block; margin-left: 5px;">300km未満</span><br>
+        <div class="circle-depth" style='background-color: #7F00FF;display: inline-block;'></div>
+        <span style="display: inline-block; margin-left: 5px;">300km以上</span><br><br>
+        <h4>Mag</h4>
+        <div class="circle-container">
+            <div class="circle small"></div>
+            <span class="circle-text" style="display: inline-block; margin-left: 5px;">M3</span><br>
+            <div class="circle medium"></div>
+            <span class="circle-text" style="display: inline-block; margin-left: 5px;">M5</span><br>
+            <div class="circle large"></div>
+            <span class="circle-text" style="display: inline-block; margin-left: 5px;">M7</span><br>
+        </div>
+    </div>
+    <div class="map-overlay top">
+        <div class="map-overlay-inner">
+            <label>地形の高さを強調する倍率: <span id="exaggeration-slider-opacity-value">10倍</span></label>
+            <input id="exaggeration-slider-opacity" type="range" min="0" max="20" step="1" value="10">
+            <label>海底地形図 不透明度: <span id="bathymetry-slider-opacity-value">100%</span></label>
+            <input id="bathymetry-slider-opacity" type="range" min="0" max="100" step="1" value="100">
+        </div>
+    </div>
+    <script type="module">
+        // Terrain-RGB形式への変換モジュール
+        import { makeNumPngProtocol } from './numPngProtocol.js'
+
+        // protocolを設定
+        let protocol = new pmtiles.Protocol();
+        maplibregl.addProtocol("pmtiles", protocol.tile);
+
+        // マップの初期化
+        const map = new maplibregl.Map({
+            container: 'map',
+            style: 'https://tile2.openstreetmap.jp/styles/osm-bright/style.json',
+            zoom: 3.43,
+            minZoom: 1,
+            maxZoom: 23,
+            pitch: 0,
+            bearing: 0,
+            maxPitch: 85,
+            center: [151.41, -26.89],
+            hash: true,
+            attributionControl: false
+        });
+
+        // ズーム・回転
+        map.addControl(new maplibregl.NavigationControl());
+
+        // フルスクリーンモードのオンオフ
+        map.addControl(new maplibregl.FullscreenControl());
+
+        // 現在位置表示
+        map.addControl(new maplibregl.GeolocateControl({
+            positionOptions: {
+                enableHighAccuracy: false
+            },
+            fitBoundsOptions: { maxZoom: 18 },
+            trackUserLocation: true,
+            showUserLocation: true
+        }));
+
+        // スケール表示
+        map.addControl(new maplibregl.ScaleControl({
+            maxWidth: 200,
+            unit: 'metric'
+        }));
+
+        // Attributionを折りたたみ表示
+        map.addControl(new maplibregl.AttributionControl({
+            compact: true,
+            customAttribution: '（<a href="https://twitter.com/shi__works" target="_blank">Twitter</a> | <a href="" target="_blank">Github</a>） '
+        }));
+
+        /*
+        // 3D地形コントロール
+        map.addControl(
+            new maplibregl.TerrainControl({
+                source: 'aist-dem',
+                exaggeration: 7 // 標高を強調する倍率
+            })
+        );
+        */
+
+        map.on('load', () => {
+            // 産総研 シームレス標高タイルソース
+            map.addSource("aist-dem", {
+                type: 'raster-dem',
+                tiles: [
+                    'numpng://tiles.gsj.jp/tiles/elev/mixed/{z}/{y}/{x}.png',
+                ],
+                attribution: '<a href="https://tiles.gsj.jp/tiles/elev/tiles.html" target="_blank">産業技術総合研究所 シームレス標高タイル(統合DEM)</a>',
+                tileSize: 256
+            });
+
+            // 産総研 シームレス標高タイルセット
+            map.setTerrain({ 'source': 'aist-dem', 'exaggeration': 10 });
+
+            // スライダーでシームレス標高タイルの高さの倍率を制御
+            const exaggeration_sliderOpacity = document.getElementById('exaggeration-slider-opacity');
+            const exaggeration_sliderOpacityValue = document.getElementById('exaggeration-slider-opacity-value');
+
+            exaggeration_sliderOpacity.addEventListener('input', (e) => {
+                const exaggerationValue = parseFloat(e.target.value);
+                map.setTerrain({ 'source': 'aist-dem', 'exaggeration': exaggerationValue });
+                exaggeration_sliderOpacityValue.textContent = e.target.value + '倍';
+            });
+
+            // GEBCO WMS 海底地形図ソース
+            map.addSource("gebco-wms", {
+                'type': 'raster',
+                'tiles': [
+                    'https://www.gebco.net/data_and_products/gebco_web_services/web_map_service/mapserv?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=gebco_latest&STYLES=&FORMAT=image/png&SRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256'
+                ],
+                attribution: '<a href="https://www.gebco.net/data_and_products/gebco_web_services/web_map_service/" target="_blank">GEBCO(WMS)</a>',
+                'tileSize': 256
+            });
+
+            // GEBCO WMS 海底地形図レイヤ
+            map.addLayer({
+                'id': 'gebco-wms-layer',
+                'type': 'raster',
+                'source': 'gebco-wms',
+                'paint': {
+                    'raster-opacity': 1
+                }
+            });
+
+            // スライダーでWMSの不透明度を制御
+            const bathymetry_sliderOpactiy = document.getElementById('bathymetry-slider-opacity');
+            const bathymetry_sliderOpactiyValue = document.getElementById('bathymetry-slider-opacity-value');
+
+            bathymetry_sliderOpactiy.addEventListener('input', (e) => {
+                map.setPaintProperty(
+                    'gebco-wms-layer',
+                    'raster-opacity',
+                    parseInt(e.target.value, 10) / 100
+                );
+                bathymetry_sliderOpactiyValue.textContent = e.target.value + '%';
+            });
+
+
+            // USGS 震源データソース
+            map.addSource("hypocenter", {
+                type: "vector",
+                url: "pmtiles://" + "https://xs489works.xsrv.jp/pmtiles-data/USGS/earthquakes_1967-01-01_2023-10-31.pmtiles",
+                attribution: '<a href="https://www.usgs.gov/programs/earthquake-hazards/earthquakes">Earthquakes courtesy of the U.S. Geological Survey</a>'
+            });
+
+            // USGS 震源データポイントレイヤ
+            map.addLayer({
+                'id': 'hypocenter-points',
+                'type': 'circle',
+                'source': 'hypocenter',
+                "source-layer": "earthquakes_19670101_20231031fgb",
+                'filter': ['>=', ['to-number', ['get', 'mag']], 3.0],
+                minzoom: 1,
+                maxzoom: 23,
+                'paint': {
+                    'circle-color': [
+                        "step",
+                        ["to-number", ["get", "depth"]],
+                        "rgba(255, 0, 0, 1)",         // 20km未満
+                        20, "rgba(255, 127, 0, 1)",   // 40km未満
+                        40, "rgba(255, 255, 0, 1)",   // 80km未満
+                        80, "rgba(0, 255, 0, 1)",     // 100km未満
+                        100, "rgba(0, 255, 255, 1)",  // 150km未満
+                        150, "rgba(0, 0, 255, 1)",    // 300km未満
+                        300, "rgba(127, 0, 255, 1)",  // 300km以上
+                    ],
+                    'circle-radius': [
+                        "interpolate",
+                        ["linear"],
+                        ["zoom"],
+                        0, 1.5,
+                        4, 1.5,
+                        5, 2,
+                        6, 2,
+                        7, ["interpolate",
+                            ["linear"],
+                            ["to-number", ["get", "mag"]],
+                            1, 1,
+                            3, 2,
+                            4, 3,
+                            5, 4,
+                            6, 6,
+                            7, 8,
+                            8, 10,
+                            9, 12
+                        ]
+                    ],
+                    'circle-opacity': 1
+                }
+            });
+
+            // スライダーで震源データのフィルタを制御
+            // フィルタセレクタの取得
+            const filterSelector = document.getElementById('filter-selector');
+
+            // フィルタセレクタの変更イベントのリスナーを追加
+            filterSelector.addEventListener('change', function () {
+                // 選択されたフィルタの値を取得し、数値に変換
+                const filterValue = parseFloat(filterSelector.value);
+
+                // マップレイヤーにフィルタを適用
+                if (filterValue === 0.0) {
+                    map.setFilter('hypocenter-points', null); // すべてのデータを表示
+                } else {
+                    map.setFilter('hypocenter-points', ['>=', ['to-number', ['get', 'mag']], filterValue]);
+                }
+            });
+
+            // GEBCO featuresソース
+            map.addSource("undersea-features-linestring", {
+                type: "geojson",
+                data: "features-multilinestring.geojson",
+                attribution: '<a href="https://www.gebco.net/data_and_products/undersea_feature_names/">GEBCO(Undersea Feature Names)</a>'
+            });
+
+            // GEBCO featuresラベルレイヤ
+            map.addLayer({
+                id: 'undersea-features-linestring-label',
+                type: 'symbol',
+                source: 'undersea-features-linestring',
+                minzoom: 1,
+                maxzoom: 23,
+                layout: {
+                    'symbol-placement': 'line-center', // ラベルを線に沿って配置
+                    'text-rotation-alignment': 'map', // ラベルの回転を線に沿って調整
+                    'text-field': ['get', 'name'],
+                    'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+                    'text-size': 14,
+                    'text-offset': [0, 0]
+                },
+                paint: {
+                    'text-color': 'rgba(255, 255, 255, 1)',
+                    'text-halo-blur': 0.8,
+                    'text-halo-color': 'rgba(0, 0, 0, 1)',
+                    'text-halo-width': 1
+                },
+            });
+
+            // OSM regions elevation pointsソース
+            map.addSource("regions-elevation-points", {
+                type: "geojson",
+                data: "ne_10m_geography_regions_elevation_points.geojson",
+                attribution: '<a href="https://www.naturalearthdata.com/">Natural Earth(Elevation Points)</a>'
+            });
+
+            // OSM regions elevation pointsレイヤ
+            map.addLayer({
+                id: 'regions-elevation-points-label',
+                type: 'symbol',
+                source: 'regions-elevation-points',
+                minzoom: 1,
+                maxzoom: 23,
+                layout: {
+                    'text-field': ['get', 'name'],
+                    'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+                    'text-size': 12,
+                    'text-offset': [0, 0],
+                    'text-allow-overlap': false,
+                    'text-ignore-placement': false,
+                    'text-max-width': 20  // テキストが折り返される前の最大幅を設定
+                },
+                paint: {
+                    'text-color': 'rgba(255, 255, 255, 1)',
+                    'text-halo-blur': 0.8,
+                    'text-halo-color': 'rgba(0, 0, 0, 1)',
+                    'text-halo-width': 1
+                }
+            });
+
+            map.showTileBoundaries = false;
+
+        });
+
+        // addProtocolを設定
+        maplibregl.addProtocol('numpng', makeNumPngProtocol());
+
+        // クリック時のポップアップ表示
+        map.on('click', 'hypocenter-points', (e) => {
+            var lng = e.lngLat.lng;
+            var lat = e.lngLat.lat;
+            var place = e.features[0].properties['place'];
+            var time = e.features[0].properties['time'];
+            var depth = e.features[0].properties['depth'];
+            var mag = e.features[0].properties['mag'];
+            var magType = e.features[0].properties['magType'];
+            var id = e.features[0].properties['id'];
+            var url = "https://earthquake.usgs.gov/earthquakes/eventpage/" + id + "/executive"
+            new maplibregl.Popup()
+                .setLngLat(e.lngLat)
+                .setHTML(
+                    '<b class="shinouchimei-title">' + place + '</b>' + '<br>' +
+                    '<table class="quake-info">' +
+                    '<tr>' +
+                    '<th></th>' +
+                    '<th></th>' +
+                    '</tr>' +
+                    '<tr>' +
+                    '<td>time(UTC)：</td>' +
+                    '<td><b>' + time + '</b></td>' +
+                    '</tr>' +
+                    '<tr>' +
+                    '<td>depth：</td>' +
+                    '<td><b>' + depth + ' km' + '</b></td>' +
+                    '</tr>' +
+                    '<tr>' +
+                    '<td>mag：</td>' +
+                    '<td><b>' + mag + '</b></td>' +
+                    '</tr>' +
+                    '<tr>' +
+                    '<td>magType：</td>' +
+                    '<td><b>' + magType + '</b></td>' +
+                    '</tr>' +
+                    '</table>' +
+                    '<a href="' + url + '" target="_blank" class="jma-link">🔎Detail(USGS web site)</a>' + '<br>' +
+                    '<a href="https://www.google.com/maps?q=' + lat + "," + lng + "&hl=ja" + '" target="_blank" class="google-maps-link">🌎Google Maps</a>'
+                )
+                .addTo(map);
+        });
+    </script>
+</body>
+
+</html>
