@@ -10,3 +10,4 @@ https://xs489works.xsrv.jp/pmtiles-data/USGS/earthquakes_1967-01-01_2023-10-31.p
 https://xs489works.xsrv.jp/pmtiles-data/USGS/earthquakes_1967-01-01-2023-10-31.parquet (69MB)
 
 ### Data Source
+https://www.usgs.gov/programs/earthquake-hazards/earthquakes
